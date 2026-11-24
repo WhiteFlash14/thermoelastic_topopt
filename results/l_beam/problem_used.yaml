@@ -1,0 +1,91 @@
+name: l_beam
+description: L-shaped beam, min compliance s.t. V <= 53 %, T(H1), T(H2) <= 325 K
+units: mm
+geometry:
+  element_size: 1.0
+  add:
+  - type: rectangle
+    x:
+    - 0
+    - 100
+    y:
+    - 0
+    - 40
+  - type: rectangle
+    x:
+    - 0
+    - 40
+    y:
+    - 0
+    - 100
+  subtract: []
+material:
+  youngs_modulus: 210000000000.0
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0
+  thermal_expansion: 1.21e-05
+  thickness: 1.0
+  reference_temperature: 312.0
+mechanical:
+  supports:
+  - where:
+      line:
+      - - 0
+        - 100
+      - - 40
+        - 100
+    fix: xy
+  loads:
+  - where:
+      line:
+      - - 96
+        - 40
+      - - 100
+        - 40
+    force:
+    - 0
+    - -500
+thermal:
+  fixed_temperature:
+  - where:
+      line:
+      - - 0
+        - 100
+      - - 40
+        - 100
+    value: 312.0
+  heat_sources:
+  - name: H1
+    where:
+      point:
+      - 20
+      - 20
+    power: 0.06
+    max_temperature: 325.0
+  - name: H2
+    where:
+      point:
+      - 70
+      - 20
+    power: 0.06
+    max_temperature: 325.0
+optimization:
+  volume_fraction: 0.53
+  filter_radius: 2.5
+  ramp_stiffness: 3
+  ramp_conductivity: 8
+  ramp_thermal_stress: 3
+  conductivity_min_ratio: 0.001
+  move_limit: 1.0
+  temperature_scaling: normalized
+  x_min: 0.001
+  initial_density: 1.0
+  max_iterations: 200
+  tolerance: 0.001
+  window: 10
+output:
+  directory: results/l_beam
+  plot:
+    temperature_range:
+    - 312
+    - 325

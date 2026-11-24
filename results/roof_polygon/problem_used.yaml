@@ -1,0 +1,88 @@
+name: roof_polygon
+description: Pentagon 120 mm wide, pinned left / roller right, apex load, two heated
+  regions, cooled base
+units: mm
+geometry:
+  element_size: 1.0
+  add:
+  - type: polygon
+    points:
+    - - 0
+      - 0
+    - - 120
+      - 0
+    - - 120
+      - 30
+    - - 60
+      - 70
+    - - 0
+      - 30
+material:
+  youngs_modulus: 70000000000.0
+  poisson_ratio: 0.33
+  thermal_conductivity: 160.0
+  thermal_expansion: 2.3e-05
+  thickness: 2.0
+  reference_temperature: 293.0
+mechanical:
+  supports:
+  - where:
+      box:
+      - - 0
+        - 0
+      - - 4
+        - 0
+    fix: xy
+  - where:
+      box:
+      - - 116
+        - 0
+      - - 120
+        - 0
+    fix: y
+  loads:
+  - where:
+      box:
+      - - 58
+        - 68
+      - - 62
+        - 70
+    force:
+    - 0
+    - -1500
+thermal:
+  fixed_temperature:
+  - where:
+      edge: bottom
+    value: 293.0
+  heat_sources:
+  - name: L
+    where:
+      box:
+      - - 29
+        - 39
+      - - 31
+        - 41
+    power: 1.5
+    max_temperature: 308.0
+  - name: R
+    where:
+      box:
+      - - 89
+        - 39
+      - - 91
+        - 41
+    power: 1.5
+    max_temperature: 308.0
+optimization:
+  volume_fraction: 0.35
+  filter_radius: 2.0
+  ramp_stiffness: 8
+  ramp_conductivity: 8
+  ramp_thermal_stress: 8
+  move_limit: 0.2
+  temperature_scaling: normalized
+  symmetry:
+  - vertical
+output:
+  directory: results/roof_polygon

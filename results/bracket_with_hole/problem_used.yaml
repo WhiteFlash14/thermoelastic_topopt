@@ -1,0 +1,83 @@
+name: bracket_with_hole
+description: Plate 120 x 60 mm bolted through a hole on the left, loaded at the right
+  tip, heated in the middle
+units: mm
+geometry:
+  element_size: 1.0
+  add:
+  - type: rectangle
+    x:
+    - 0
+    - 120
+    y:
+    - 0
+    - 60
+  subtract:
+  - type: circle
+    center:
+    - 20
+    - 30
+    radius: 8
+  passive_solid:
+  - type: circle
+    center:
+    - 20
+    - 30
+    radius: 13
+material:
+  youngs_modulus: 210000000000.0
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0
+  thermal_expansion: 1.21e-05
+  thickness: 1.0
+  reference_temperature: 300.0
+mechanical:
+  supports:
+  - where:
+      circle:
+        center:
+        - 20
+        - 30
+        radius: 8.8
+    fix: xy
+  loads:
+  - where:
+      line:
+      - - 120
+        - 27
+      - - 120
+        - 33
+    force:
+    - 0
+    - -800
+thermal:
+  fixed_temperature:
+  - where:
+      circle:
+        center:
+        - 20
+        - 30
+        radius: 8.8
+    value: 300.0
+  - where:
+      edge: left
+    value: 300.0
+  heat_sources:
+  - name: chip
+    where:
+      point:
+      - 80
+      - 30
+    power: 0.25
+    max_temperature: 318.0
+optimization:
+  volume_fraction: 0.4
+  filter_radius: 2.0
+  ramp_stiffness: 8
+  ramp_conductivity: 8
+  ramp_thermal_stress: 8
+  move_limit: 0.2
+  temperature_scaling: normalized
+  max_iterations: 200
+output:
+  directory: results/bracket_with_hole

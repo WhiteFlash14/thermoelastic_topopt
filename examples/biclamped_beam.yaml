@@ -1,0 +1,56 @@
+# Meng et al. (2021), Section 5.2, Fig. 11 / Fig. 12:
+# biclamped beam, stiffest design with volume and temperature constraints.
+name: biclamped_beam
+description: Biclamped beam, min compliance s.t. V <= 49 %, T(H1), T(H2) <= 325 K
+units: mm
+
+geometry:
+  element_size: 1.0             # 7000 square Q4 elements of 1 mm (as in the paper)
+  add:
+    - {type: rectangle, x: [0, 100], y: [0, 70]}
+
+material:
+  youngs_modulus: 210.0e+9
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0
+  thermal_expansion: 12.1e-6
+  thickness: 1.0
+  reference_temperature: 312.0
+
+mechanical:
+  supports:                     # left and right sides clamped
+    - {where: {edge: left},  fix: xy}
+    - {where: {edge: right}, fix: xy}
+  loads:                        # F = 3500 N on a 15-node (5 x 3) patch at the centre
+    - {where: {box: [[48, 34], [52, 36]]}, force: [0, -3500]}
+
+thermal:
+  fixed_temperature:            # top and bottom sides at 312 K
+    - {where: {edge: top},    value: 312.0}
+    - {where: {edge: bottom}, value: 312.0}
+  heat_sources:
+    - {name: H1, where: {point: [25, 35]}, power: 0.335, max_temperature: 325.0}
+    - {name: H2, where: {point: [75, 35]}, power: 0.335, max_temperature: 325.0}
+
+optimization:
+  volume_fraction: 0.49
+  # --- settings NOT reported in the paper; chosen by scripts/parameter_study.py
+  #     as the best pixel match to the paper's Fig. 12(A) (see README, "Matching the paper")
+  filter_radius: 1.5            # mm
+  ramp_stiffness: 8             # R_E
+  ramp_conductivity: 8          # R_lambda
+  ramp_thermal_stress: 8        # R_beta
+  conductivity_min_ratio: 1.0e-3
+  move_limit: 0.2
+  temperature_scaling: normalized
+  symmetry: []                  # e.g. [vertical] forces a left/right mirror-symmetric layout (not used by the paper)
+  # --- settings given in the paper (Sec. 5)
+  x_min: 0.001
+  initial_density: 1.0
+  max_iterations: 200
+  tolerance: 0.001
+  window: 10
+
+output:
+  directory: results/biclamped_beam
+  plot: {temperature_range: [312, 325]}

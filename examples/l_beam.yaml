@@ -1,0 +1,55 @@
+# Meng et al. (2021), Section 5.1, Fig. 3 / Fig. 4:
+# L-shaped beam, stiffest design with volume and temperature constraints.
+name: l_beam
+description: L-shaped beam, min compliance s.t. V <= 53 %, T(H1), T(H2) <= 325 K
+units: mm                       # every length in this file is in mm
+
+geometry:
+  element_size: 1.0             # 6400 square Q4 elements of 1 mm (as in the paper)
+  add:                          # domain = union of these shapes ...
+    - {type: rectangle, x: [0, 100], y: [0, 40]}     # lower arm
+    - {type: rectangle, x: [0, 40],  y: [0, 100]}    # vertical arm
+  subtract: []                  # ... minus these shapes
+
+material:                       # steel, Sec. 5 of the paper (SI units, thickness in mm)
+  youngs_modulus: 210.0e+9      # Pa
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0    # W/(m K)
+  thermal_expansion: 12.1e-6    # 1/K
+  thickness: 1.0                # mm ("unit thickness")
+  reference_temperature: 312.0  # K, stress-free temperature T0 of Eq. (11)
+
+mechanical:
+  supports:                     # top edge clamped
+    - {where: {line: [[0, 100], [40, 100]]}, fix: xy}
+  loads:                        # F = 500 N downwards, split over 5 nodes at the upper right tip
+    - {where: {line: [[96, 40], [100, 40]]}, force: [0, -500]}
+
+thermal:
+  fixed_temperature:            # top edge kept at 312 K
+    - {where: {line: [[0, 100], [40, 100]]}, value: 312.0}
+  heat_sources:                 # point heat sources (W) with a maximum-temperature constraint
+    - {name: H1, where: {point: [20, 20]}, power: 0.06, max_temperature: 325.0}
+    - {name: H2, where: {point: [70, 20]}, power: 0.06, max_temperature: 325.0}
+
+optimization:
+  volume_fraction: 0.53
+  # --- settings NOT reported in the paper; chosen by scripts/parameter_study.py
+  #     as the best pixel match to the paper's Fig. 4(A) (see README, "Matching the paper")
+  filter_radius: 2.5            # mm (density filter r_min, Eq. 19-20)
+  ramp_stiffness: 3             # R_E      (Eq. 18)
+  ramp_conductivity: 8          # R_lambda
+  ramp_thermal_stress: 3        # R_beta
+  conductivity_min_ratio: 1.0e-3   # lambda_min / lambda_0
+  move_limit: 1.0               # = default of Svanberg's mmasub (asymptotes still limit the step)
+  temperature_scaling: normalized  # MMA sees T_i / Tbar_i - 1 <= 0
+  # --- settings given in the paper (Sec. 5)
+  x_min: 0.001
+  initial_density: 1.0          # initial design variables = 1
+  max_iterations: 200           # maximum 200 iterations
+  tolerance: 0.001              # stop when objective changes < 0.1 % ...
+  window: 10                    # ... in 10 consecutive iterations (and constraints satisfied)
+
+output:
+  directory: results/l_beam
+  plot: {temperature_range: [312, 325]}

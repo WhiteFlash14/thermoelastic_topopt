@@ -1,0 +1,43 @@
+# Example (not from the paper): geometry taken from a picture (examples/hook.png).
+# Shows: image geometry - dark pixels are material.  Make your own with any paint program.
+name: hook_from_image
+description: Hook-shaped part read from a PNG, clamped at the foot of the post, pulled down at the pin hole
+units: mm
+
+geometry:
+  element_size: 1.0
+  add:
+    - {type: image, file: hook.png, width: 150}     # 300 x 240 px -> 150 x 120 mm (path relative to this file)
+
+material:
+  youngs_modulus: 210.0e+9
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0
+  thermal_expansion: 12.1e-6
+  thickness: 1.0
+  reference_temperature: 300.0
+
+mechanical:
+  supports:
+    - {where: {edge: bottom}, fix: xy}                                  # foot of the post
+  loads:
+    - {where: {circle: {center: [127.5, 65], radius: 10.8}}, force: [0, -1000]}  # pin-hole edge
+
+thermal:
+  fixed_temperature:                      # post sits against a cold wall (left) and floor (bottom)
+    - {where: {edge: bottom}, value: 300.0}
+    - {where: {edge: left},   value: 300.0}
+  heat_sources:
+    - {name: H, where: {point: [100, 105]}, power: 0.1, max_temperature: 312.0}
+
+optimization:
+  volume_fraction: 0.45
+  filter_radius: 2.0
+  ramp_stiffness: 8
+  ramp_conductivity: 8
+  ramp_thermal_stress: 8
+  move_limit: 0.2
+  temperature_scaling: normalized
+
+output:
+  directory: results/hook_from_image

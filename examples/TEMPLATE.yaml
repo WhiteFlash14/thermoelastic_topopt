@@ -1,0 +1,96 @@
+# =============================================================================
+#  TEMPLATE problem file - copy it, edit it, run:   python run.py my_part.yaml
+#  Tip: run with --check first; it only draws setup.png so you can verify the
+#  supports / loads / heat sources before spending time on the optimization.
+#  Every entry marked (optional) can be deleted; the default is shown.
+# =============================================================================
+name: my_part                    # used for the default output folder results/<name>
+description: free text           # (optional)
+units: mm                        # length unit of EVERY coordinate below: mm | cm | m | um | in
+
+# -----------------------------------------------------------------------------
+# GEOMETRY: design domain = union of `add` shapes minus union of `subtract` shapes.
+# It is meshed with square 4-node elements of size `element_size`; an element is
+# kept if its centre lies inside the domain.
+# Shape types:
+#   {type: rectangle, x: [x0, x1], y: [y0, y1]}
+#   {type: circle,    center: [cx, cy], radius: r}
+#   {type: polygon,   points: [[x1, y1], [x2, y2], ...]}       (any simple polygon)
+#   {type: image,     file: part.png, width: 120}             dark pixels = material
+#        (optional for image: height (default keeps aspect ratio), origin: [x0, y0],
+#         threshold: 0.5, invert: false; file path is relative to this YAML file)
+# -----------------------------------------------------------------------------
+geometry:
+  element_size: 1.0
+  add:
+    - {type: rectangle, x: [0, 100], y: [0, 50]}
+  subtract:                      # (optional)
+    - {type: circle, center: [70, 25], radius: 6}
+  passive_solid: []              # (optional) shapes that must stay solid (rho = 1), e.g. bolt rings
+  passive_void: []               # (optional) shapes that must stay empty
+
+# -----------------------------------------------------------------------------
+# MATERIAL (SI units except thickness, which is in `units`). Defaults = paper's steel.
+# -----------------------------------------------------------------------------
+material:
+  youngs_modulus: 210.0e+9       # Pa
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0     # W/(m K)
+  thermal_expansion: 12.1e-6     # 1/K
+  thickness: 1.0                 # plane-stress thickness (in `units`)
+  reference_temperature: 312.0   # K, stress-free temperature T0 (Eq. 11)
+
+# -----------------------------------------------------------------------------
+# NODE SELECTORS ("where:"), coordinates in `units`:
+#   {point: [x, y]}                         nearest node (heat sources: the exact point,
+#                                           shared by the surrounding element's nodes)
+#   {points: [[x, y], ...]}                 nearest node of each point
+#   {line: [[x1, y1], [x2, y2]]}            nodes on the segment (tol: element_size/4)
+#   {box: [[xmin, ymin], [xmax, ymax]]}     nodes inside the rectangle
+#   {circle: {center: [x, y], radius: r}}   nodes inside the circle
+#   {edge: left | right | top | bottom}     nodes on that side of the bounding box
+#   add  tol: value  next to line/edge to change the tolerance
+# -----------------------------------------------------------------------------
+mechanical:
+  supports:
+    - {where: {edge: left}, fix: xy}           # fix: x | y | xy
+  loads:                                       # force = TOTAL [Fx, Fy] in N, split equally
+    - {where: {line: [[100, 22], [100, 28]]}, force: [0, -1000]}
+    #  per_node: true   -> apply `force` to every selected node instead of splitting it
+
+thermal:
+  fixed_temperature:                           # at least one is required
+    - {where: {edge: left}, value: 312.0}      # K
+  heat_sources:                                # power in W (TOTAL, split over selected nodes)
+    - name: H1
+      where: {point: [40, 25]}
+      power: 0.2
+      max_temperature: 325.0                   # (optional) constraint T <= limit
+      # point -> one constraint at the point; region -> one constraint per selected node
+  temperature_limits: []                       # (optional) extra monitored points without heat:
+  #  - {name: sensor, where: {point: [90, 40]}, max_temperature: 320}
+
+# -----------------------------------------------------------------------------
+# OPTIMIZATION  (min compliance C = F^T U  s.t. volume and temperature limits)
+# -----------------------------------------------------------------------------
+optimization:
+  volume_fraction: 0.5           # allowed material fraction of the whole domain
+  filter_radius: 1.5             # density filter radius (in `units`); >= 1.5 elements recommended
+  ramp_stiffness: 8              # R_E      RAMP penalties of Eq. (18)
+  ramp_conductivity: 8           # R_lambda
+  ramp_thermal_stress: 8         # R_beta
+  conductivity_min_ratio: 1.0e-3 # lambda_min / lambda_0 (conductivity of "void")
+  x_min: 0.001                   # lower bound of design variables
+  initial_density: 1.0           # start from full material (paper)
+  max_iterations: 200
+  tolerance: 0.001               # stop when C changes < 0.1 % ...
+  window: 10                     # ... in 10 consecutive iterations and constraints hold
+  move_limit: 0.2                # MMA move limit (0 < m <= 1)
+  temperature_scaling: normalized  # how MMA sees T-constraints: normalized (T/Tbar-1) | rise
+  objective_scale: 1.0           # MMA sees scale * C / C_initial
+  symmetry: []                   # [vertical] and/or [horizontal]: mirror-symmetric layout
+  stress_exponent: 0.5           # s of the relaxed stress, Eq. (15) (reporting only)
+
+output:
+  directory: results/my_part     # (optional) relative to the project folder
+  plot: {temperature_range: null}  # (optional) e.g. [312, 325] for a fixed colour scale

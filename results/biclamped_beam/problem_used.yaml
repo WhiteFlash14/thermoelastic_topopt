@@ -1,0 +1,82 @@
+name: biclamped_beam
+description: Biclamped beam, min compliance s.t. V <= 49 %, T(H1), T(H2) <= 325 K
+units: mm
+geometry:
+  element_size: 1.0
+  add:
+  - type: rectangle
+    x:
+    - 0
+    - 100
+    y:
+    - 0
+    - 70
+material:
+  youngs_modulus: 210000000000.0
+  poisson_ratio: 0.3
+  thermal_conductivity: 43.0
+  thermal_expansion: 1.21e-05
+  thickness: 1.0
+  reference_temperature: 312.0
+mechanical:
+  supports:
+  - where:
+      edge: left
+    fix: xy
+  - where:
+      edge: right
+    fix: xy
+  loads:
+  - where:
+      box:
+      - - 48
+        - 34
+      - - 52
+        - 36
+    force:
+    - 0
+    - -3500
+thermal:
+  fixed_temperature:
+  - where:
+      edge: top
+    value: 312.0
+  - where:
+      edge: bottom
+    value: 312.0
+  heat_sources:
+  - name: H1
+    where:
+      point:
+      - 25
+      - 35
+    power: 0.335
+    max_temperature: 325.0
+  - name: H2
+    where:
+      point:
+      - 75
+      - 35
+    power: 0.335
+    max_temperature: 325.0
+optimization:
+  volume_fraction: 0.49
+  filter_radius: 1.5
+  ramp_stiffness: 8
+  ramp_conductivity: 8
+  ramp_thermal_stress: 8
+  conductivity_min_ratio: 0.001
+  move_limit: 0.2
+  temperature_scaling: normalized
+  symmetry: []
+  x_min: 0.001
+  initial_density: 1.0
+  max_iterations: 200
+  tolerance: 0.001
+  window: 10
+output:
+  directory: results/biclamped_beam
+  plot:
+    temperature_range:
+    - 312
+    - 325

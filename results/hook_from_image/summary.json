@@ -1,0 +1,25 @@
+{
+  "compliance_Nm": 2.7128003720892573,
+  "volume_fraction": 0.44996722710056714,
+  "volume_limit": 0.45,
+  "max_von_mises_MPa": 1290.0556555584494,
+  "max_von_mises_MPa_solid_only": 1290.0556555584494,
+  "T_max_domain_K": 311.9973665350531,
+  "constrained_temperatures_K": {
+    "H": 311.9973665350531
+  },
+  "temperature_limits_K": {
+    "H": 312.0
+  },
+  "Fth_over_Fm": 5.2949385570905765,
+  "Fth_over_Fm_free_dofs": 5.294938376551801,
+  "grayness_4rho1mrho": 0.13229326418715517,
+  "gray_fraction_0p1_0p9": 0.14749844301432427,
+  "iterations": 54,
+  "status": "converged",
+  "feasible": true,
+  "elements": 9634,
+  "nodes": 9995,
+  "design_variables": 9634,
+  "runtime_s": 13.777717590332031
+}
