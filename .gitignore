@@ -1,7 +1,22 @@
+# Local Python environments
 .venv/
+venv/
+
+# Python bytecode and tool caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated plots, numerical exports, histories, and reports
+/results/
+
+# Local settings and secrets
 .env
 .env.*
 !.env.example
-EOF
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db

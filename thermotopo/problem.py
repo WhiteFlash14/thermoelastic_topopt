@@ -191,7 +191,7 @@ class ThermoelasticCompliance:
         em, mesh = self.em, self.mesh
         nn = mesh.nn
         rE, drE, kf, dkf, rB, drB = self.interpolate(rho)
-        # ---- heat conduction  K_T theta = P   (Dirichlet part theta_D)
+        # ---- heat conduction  K_T theta = P   
         th = self.therm
         KT = th.matrix(kf, em['kt0'])
         rhs = self.P.copy()
@@ -202,7 +202,7 @@ class ThermoelasticCompliance:
         theta = self.theta_D.copy()
         theta[th.free] = tfac.solve(rhs[th.free])
         theta_e = theta[mesh.cells]
-        # ---- thermo-elastic equilibrium  K U = Fm + Fth
+        # ---- thermoelastic equilibrium  K U = Fm + Fth
         fth_e = rB[:, None] * (theta_e @ em['g0'].T)
         Fth = scatter_add(2 * nn, self.edof, fth_e)
         F = self.Fm + Fth

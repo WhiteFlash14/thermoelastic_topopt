@@ -1,249 +1,458 @@
-# Thermo-elastic topology optimization (stiffest design) for any 2D structure
+# Thermoelastic Topology Optimization
 
-This project implements the **compliance-minimization problem of Meng et al. (2021)**,
-*Thermo-elastic topology optimization with stress and temperature constraints*,
-Int. J. Numer. Methods Eng. 122:2919–2944, Eq. (23):
+**Find where to keep material in a 2D part that must carry loads and conduct heat.**
 
-```
-min  C = F^T U                      F = F_m + F_th(rho, T)        (thermal load, Eq. 9-14)
-s.t. K_m(rho) U = F                 (Eq. 4)
-     K_T(rho) T = P                 (Eq. 1)
-     sum(rho_e v_e) <= V_f V_0      (volume)
-     T_i <= Tbar_i                  (temperature at every heat source)
-     0 < x_min <= x_e <= 1
-```
+Imagine a metal bracket that supports a weight while a nearby component heats it.
+Removing material makes the bracket lighter, but can also make it bend more and
+make it harder for heat to escape. Heating also causes expansion, which affects
+the mechanical response.
 
-with RAMP interpolation of stiffness, conductivity and thermal-stress coefficient
-(Eq. 18), a density filter (Eq. 19–21), adjoint sensitivities (Eq. 33–37 and 44–49)
-and the Method of Moving Asymptotes (MMA, Svanberg). The relaxed centroid von Mises
-stress of Eq. (15)–(16) is computed for reporting, as in the paper's figures (B).
+This Python project searches for a material layout that minimizes **compliance**
+(a force–displacement measure), while keeping material usage and selected
+temperatures within specified limits. You describe the part in a YAML or JSON
+file; the program calculates temperatures and displacements, improves the layout
+iteratively, and saves plots and numerical results.
 
-**Any 2D part** can be optimized. You describe it in a small YAML file (shapes,
-a polygon or a black-and-white picture, plus supports, loads, heat sources and
-cooled edges) and run one command. The two paper benchmarks are just two such
-files, `examples/l_beam.yaml` and `examples/biclamped_beam.yaml`.
+For example, the included L-shaped beam allows at most **53% of the original
+material volume** and limits the two heat-source temperatures to **325 K**.
 
----
+> **Scope:** the optimizer enforces volume and temperature limits. Von Mises
+> stress is calculated and plotted for inspection; there is no stress-limit
+> constraint in this implementation.
 
-## 1. Quick start (WSL / Linux / macOS / Windows)
+## Start here
+
+- [Install and run an example](#install-and-run-an-example)
+- [Understand how it works](#how-it-works)
+- [Read the results](#read-the-results)
+- [Define your own part](#define-your-own-part)
+- [Explore the included examples](#included-examples)
+- [Find the code](#project-structure)
+- [Run checks and paper comparisons](#checks-and-paper-comparisons)
+- [Choose what to push to GitHub](#what-to-push-to-github)
+- [Understand the limitations](#limitations)
+
+## Install and run an example
+
+Use Python **3.10 or newer**. The project has been checked locally with Python
+3.12. Its dependencies are NumPy, SciPy, Matplotlib, PyYAML, and Pillow. The MMA
+optimizer is included in the source; a separate optimization package is not needed.
+
+### 1. Get the code and create an environment
+
+On Linux, WSL, or macOS:
 
 ```bash
+git clone https://github.com/WhiteFlash14/thermoelastic_topopt.git
 cd thermoelastic_topopt
-pip install -r requirements.txt        # numpy scipy matplotlib pyyaml pillow (all in Anaconda already)
-
-python verify.py                       # 13 self-checks, ~2 s
-python run.py examples/l_beam.yaml     # paper Fig. 4  (~15 s)
-python run.py examples/biclamped_beam.yaml   # paper Fig. 12 (~15 s)
-python scripts/compare_with_paper.py   # side-by-side with the paper -> results/paper_comparison.*
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-On your WSL machine use Anaconda's Python (`~/anaconda3/bin/python run.py ...`), or
-activate it first with `conda activate`. `bash run_all.sh` reproduces everything in
-`results/` in about 2–3 minutes. No NLopt or other compiled extras are needed: MMA is
-included (`thermotopo/mma.py`).
+On Windows, use PowerShell:
 
-## 2. Optimizing your own structure
+```powershell
+git clone https://github.com/WhiteFlash14/thermoelastic_topopt.git
+cd thermoelastic_topopt
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
 
-1. Copy `examples/TEMPLATE.yaml` (every option is explained in it) to e.g. `my_part.yaml`.
-2. Describe the geometry. The domain is a union of shapes minus other shapes:
-   ```yaml
-   geometry:
-     element_size: 1.0
-     add:      [{type: rectangle, x: [0, 120], y: [0, 60]}]
-     subtract: [{type: circle, center: [20, 30], radius: 8}]
-   ```
-   Shape types: `rectangle`, `circle`, `polygon` (list of points) and `image`
-   (a PNG where dark pixels are material; see `examples/hook_from_image.yaml`).
-   Optional `passive_solid` / `passive_void` shapes are kept solid / empty.
-3. Pick nodes for boundary conditions with `where:` selectors: `point`, `points`, `line`,
-   `box`, `circle`, `edge: left|right|top|bottom`.
-   ```yaml
-   mechanical:
-     supports: [{where: {edge: left}, fix: xy}]                               # x, y or xy
-     loads:    [{where: {line: [[120, 27], [120, 33]]}, force: [0, -800]}]   # total N
-   thermal:
-     fixed_temperature: [{where: {edge: left}, value: 300}]                   # K
-     heat_sources: [{name: chip, where: {point: [80, 30]}, power: 0.25, max_temperature: 318}]
-   ```
-4. **Check the setup first.** This only builds the model, draws `setup.png` and prints the
-   temperatures of the all-solid design:
-   ```bash
-   python run.py my_part.yaml --check
-   ```
-   If the all-solid design already violates a temperature limit, the problem is
-   infeasible at lower volume. Raise the limit, lower the power or add cooling.
-5. Run it: `python run.py my_part.yaml`. You can change any value from the command line
-   without editing the file:
-   ```bash
-   python run.py my_part.yaml --set optimization.volume_fraction=0.35 --out results/my_part_v35
-   ```
-
-Units: coordinates and thickness use the `units:` of the file (default `mm`). Material
-data are SI (Pa, W/(m K), 1/K), forces are N, heat is W, temperatures are K.
-
-### Included examples
-
-| file | what it shows |
-|---|---|
-| `examples/l_beam.yaml` | paper Sec. 5.1, Fig. 3/4 |
-| `examples/biclamped_beam.yaml` | paper Sec. 5.2, Fig. 11/12 |
-| `examples/bracket_with_hole.yaml` | shape subtraction, bolt-hole support (circle selector), passive solid ring |
-| `examples/roof_polygon.yaml` | polygon domain, roller support, region heat sources, mirror symmetry, aluminium |
-| `examples/hook_from_image.yaml` | geometry from a picture (`hook.png`, drawn by `make_hook_image.py`) |
-| `examples/TEMPLATE.yaml` | every option, documented |
-
-## 3. What each run writes (`results/<name>/`)
-
-| file | content |
-|---|---|
-| `setup.png` | domain and boundary conditions. Check this first. |
-| `fields.png` | paper-style panels: (A) density, (B) von Mises stress Eq. 15, (C) temperature |
-| `density.png` | the optimized layout alone, ready for a report |
-| `history.png`, `history.csv` | compliance, volume and constrained temperatures per MMA iteration |
-| `summary.json` | final numbers: C, V, max stress, temperatures, ‖F_th‖/‖F_m‖, grayness, iterations, status |
-| `result.npz` | all fields (density, T, U, stress, mesh) for your own post-processing |
-| `result.vtk` | the same for ParaView |
-| `problem_used.yaml` | the exact input used, including `--set` overrides |
-
-`results/paper_comparison.png|md` compare the two benchmarks with the paper, and
-`results/parameter_study/*/study.csv|png` hold the parameter studies described below.
-
-## 4. Matching the paper
-
-### What is fixed by the paper, and what isn't
-
-Taken from the paper (Sec. 5, Figs. 3 and 11, Tables 1–2): geometry, 1 mm square Q4
-elements (6400 / 7000), plane stress, unit thickness (1 mm), steel properties,
-T_ref = fixed temperature = 312 K, F = 500 N on 5 nodes (L) / 3500 N on a 15-node patch
-(biclamped), point heat sources of 0.06 W / 0.335 W limited to 325 K, V_f = 53 % / 49 %,
-x_min = 0.001, initial design x = 1, at most 200 MMA iterations, stop when C changes
-< 0.1 % over 10 iterations with all constraints satisfied, and s = 0.5 in Eq. 15.
-Heat-source positions were measured from the paper's temperature plots: L (20, 20) and
-(70, 20) mm; biclamped (25, 35) and (75, 35) mm.
-
-Two checks confirm this reading of the paper:
-* All-solid L-beam: the source temperatures come out at 318.1 / 319.3 K. The paper's
-  iteration history (Fig. 6) starts at about 318.6 K.
-* Put the **paper's own layouts** (digitized from Fig. 4A / 12A) into this model and the
-  results land where the paper reports them: biclamped T = 324.6 K, σ_max = 503 MPa,
-  ‖F_th‖/‖F_m‖ = 0.28 (paper: 325 K, 513.8 MPa, 0.29). The two FE models agree.
-
-**Not reported in the paper:** the RAMP penalties R_E, R_λ, R_β, the filter radius
-r_min, λ_min, and the MMA settings. None of these change the equations, but they decide
-which local optimum MMA finds. They were chosen with `scripts/parameter_study.py`, which
-runs every combination and scores each layout by **pixel agreement** with the digitized
-paper figure (`paper_reference/*.npy`):
-
-| | R_E | R_λ | R_β | r_min | MMA move | chosen because |
-|---|---|---|---|---|---|---|
-| L-beam | 3 | 8 | 3 | 2.5 mm | 1.0 (Svanberg default) | best agreement of ~210 runs |
-| biclamped | 8 | 8 | 8 | 1.5 mm | 0.2 | best agreement of 72 runs |
-
-Both use λ_min = 10⁻³ λ₀ (results are insensitive to it) and the temperature constraint
-written as T_i/T̄_i − 1 ≤ 0. If you prefer **one** setting for both problems, use
-R_E = 3, R_λ = 8, R_β = 3, r_min = 2.5 mm, move = 1.0. That gives 85.7 % (L) and 90.9 %
-(biclamped) agreement.
-
-### Results
-
-| | paper | **this code** | old project (best variant) |
-|---|---:|---:|---:|
-| **L-beam** pixel agreement with Fig. 4A | – | **85.7 %** (IoU 0.76) | 80.6 % |
-| max von Mises (MPa) | 568 | **563** | 524 |
-| T(H1) / T(H2) (K) | 325 / 325 | 323.1 / 325.0 | 324.0 / 325.0 |
-| ‖F_th‖/‖F_m‖ | 3.42 | 2.55 | 2.20 |
-| **Biclamped** pixel agreement with Fig. 12A | – | **95.5 %** (IoU 0.91) | 81.2 % |
-| max von Mises (MPa) | 513.8 | 460.5 | 438.6 |
-| T(H1) / T(H2) (K) | 325 / 325 | **325.0 / 325.0** | 325.0 / 325.0 |
-| ‖F_th‖/‖F_m‖ | 0.29 | **0.291** | 0.25 |
-
-![comparison](results/paper_comparison.png)
-
-* **Biclamped beam:** the paper's X layout with two holes beside the load is reproduced,
-  together with the stress concentrations at the four clamped corners and the load patch,
-  and the temperature field. The only visible difference is that our holes are slightly
-  smaller.
-* **L-beam:** the main features match: the U-shaped cut-out in the vertical arm, the
-  outer arc, the bottom chord, the diagonal to the load point, and the stress peak at the
-  re-entrant corner (563 vs 568 MPa). The lower-right web differs. The paper has two thin
-  members there; our optimizer leaves a low-density (gray) region instead.
-* In **both** cases our layout is *stiffer* than the paper's own layout analysed in the
-  same model (C = 0.2473 vs 0.2585 N m for L; 0.2581 vs 0.2786 N m for biclamped), with
-  the same volume and temperature limits. So the remaining shape differences are
-  different local optima of a non-convex problem, plus digitization. They are not
-  missing physics or a weaker optimizer.
-* ‖F_th‖/‖F_m‖ depends on fine details of the layout: for the L-beam it ranges from 2.3
-  to 3.2 across near-identical designs, and the paper's own layout gives 2.8–3.7 here
-  depending on the filter radius.
-  Treat it as an order-of-magnitude check: thermal load dominates for the L-beam and is
-  minor for the biclamped beam, as in the paper.
-
-### Reproducing the parameter study
+If you already have the project, open a terminal in its folder and skip the clone.
+Then install the dependencies in your activated environment:
 
 ```bash
-python scripts/parameter_study.py examples/biclamped_beam.yaml --mask paper_reference/fig12A_biclamped.npy \
-   --grid ramp_stiffness=3,5,8 ramp_conductivity=3,8 ramp_thermal_stress=3,8 filter_radius=1.5,2,2.5 \
-          move_limit=0.2,1.0 temperature_scaling=normalized --jobs 8
-```
-Any key of the `optimization:` block can be swept, and the study runs in parallel.
-`paper_reference/digitize.py` shows how the paper figures were digitized.
-
-## 5. Code layout
-
-```
-run.py                     command-line entry point (problem file -> results folder)
-verify.py                  self-checks: element null-spaces, thermal patch test, paper data,
-                           adjoint-vs-finite-difference gradients, MMA test problem
-run_all.sh                 reproduce all results
-thermotopo/
-  config.py                read YAML/JSON, unit conversion, build mesh + problem
-  geometry.py              shapes: rectangle, circle, polygon, image; union / subtraction
-  mesh.py                  structured Q4 mesh of any domain, node selectors, symmetry maps
-  fem.py                   Q4 plane-stress / conduction / thermal-load element matrices, assembly
-  problem.py               Meng Eq. (23): state solves, RAMP, filter, adjoint sensitivities, stress
-  mma.py                   Svanberg's MMA (mmasub + subsolv), pure NumPy
-  optimizer.py             optimization loop, paper's stopping rule
-  postprocess.py           figures, VTK, npz/csv/json output
-scripts/
-  compare_with_paper.py    paper vs. this code (figure + table)
-  parameter_study.py       sweep unreported settings, score against the paper figure
-paper_reference/           digitized paper layouts (Fig. 4A, Fig. 12A) + digitize.py
-examples/                  problem files (paper benchmarks + general examples + template)
-results/                   outputs of run_all.sh
+python -m pip install -r requirements.txt
 ```
 
-## 6. What changed compared with the previous project
+### 2. Check the installation and problem setup
 
-* **Same equations.** For identical density fields, the new FE code reproduces the old
-  code's compliance, temperatures, sensitivities and stresses to about 1e-11 relative
-  error (checked during the rewrite).
-* **Optimizer:** the old code used NLopt's `LD_MMA`. That variant counts *function
-  evaluations* rather than MMA iterations, adds inner loops, and had to start from a
-  "feasible" design. It is replaced by Svanberg's classic MMA starting from x = 1 with the
-  paper's iteration limit and stopping rule. NLopt is no longer needed.
-* **Paper matching:** the unreported settings were chosen systematically against the
-  digitized figures instead of by trial runs. Biclamped agreement went from 81 % to 96 %,
-  L-beam from 81 % to 86 %.
-* **General input:** geometry, BCs, loads, heat sources and all settings come from a
-  problem file. Nothing is hard-coded to the two benchmarks.
-* **Results:** one folder per problem with the same set of files every time.
+```bash
+python verify.py
+python run.py examples/l_beam.yaml --check
+```
 
-**About the old `results/` folders:** `symmetric_coarse … symmetric_fine5` were six
-successive stages of one biclamped run (coarse 2 mm mesh, then five restarts on the 1 mm
-mesh with mirror symmetry imposed). `shape_coarse/fine1/fine2` were the same idea with
-q = 8. `l_filter3` was an L-beam run with a 3 mm filter. The loose `*_numerics.npz`
-files were the first baseline runs. None of these stages are needed any more: each
-benchmark is now a single run from x = 1.
+`verify.py` runs numerical self-checks. `--check` builds the example, saves
+`results/l_beam/setup.png`, and prints compliance and monitored temperatures for
+the initial all-solid design, with any prescribed void regions retained. It does
+not run the optimization. Open `setup.png` to check the supports, forces, heat
+sources, and fixed-temperature boundaries.
 
-## 7. Limitations
+### 3. Run the optimization
 
-* Structured square elements. Curved edges are represented as staircases, so refine
-  `element_size` for smooth boundaries. Arbitrary unstructured meshes (e.g. from Gmsh)
+```bash
+python run.py examples/l_beam.yaml
+```
+
+Open `results/l_beam/density.png` for the resulting layout and
+`results/l_beam/fields.png` for density, stress, and temperature together. Read
+`summary.json` to check whether the constraints were satisfied.
+
+Runtime depends on the mesh, iteration count, and computer. Reusing an output
+folder replaces files with the same names. Use `--out` to keep a separate run:
+
+```bash
+python run.py examples/l_beam.yaml --out results/l_beam_trial
+```
+
+## How it works
+
+**Topology optimization** chooses where material should remain inside an allowed
+region. The region is divided into small square finite elements, each with a
+material density, written as `rho`:
+
+| Density | Meaning in this model |
+|---|---|
+| `1` | Solid material |
+| Near `0.001` with the default settings | Almost empty; a small residual density is retained for numerical stability |
+| Between these values | An intermediate material density during optimization |
+
+These are design variables describing material distribution, not a material's
+mass density in kg/m³. Intermediate densities can remain in the final solution.
+
+```mermaid
+flowchart TD
+    A[Read geometry, material, loads, and limits] --> B[Create the finite element mesh]
+    B --> C[Initialize material densities]
+    C --> K[Filter material densities]
+    K --> D[Solve heat conduction]
+    D --> E[Calculate thermal expansion forces]
+    E --> F[Solve mechanical displacements]
+    F --> G[Evaluate compliance, volume, and temperatures]
+    G --> H{Stopping condition reached?}
+    H -->|No| I[Calculate gradients and update densities with MMA]
+    I --> K
+    H -->|Yes| J[Save plots and numerical results]
+```
+
+The key terms are:
+
+| Term | What it means here |
+|---|---|
+| Finite element analysis, or FEA | Approximate the part with connected small elements and solve for its response |
+| Compliance | `C = FᵀU`, combining total forces `F` and displacements `U`; the objective being minimized |
+| Volume fraction | Average material density; `0.5` permits up to half the original domain volume |
+| Fixed-temperature boundary | Nodes held at a specified temperature, providing a path for heat to leave |
+| Thermal load | Equivalent mechanical forces arising from thermal expansion |
+| Density filter | Averages nearby design values to reduce alternating solid/void checkerboard patterns |
+| RAMP | A nonlinear rule relating density to stiffness, conductivity, and thermal loading |
+| Sensitivity or gradient | How a result changes when a design variable changes |
+| MMA | Method of Moving Asymptotes, the algorithm that updates the material layout |
+
+For fixed forces, lower compliance means less deformation in the direction of
+those forces. Here, thermal forces also depend on the layout, so comparisons
+should use the same geometry, loading, material, and thermal boundary conditions.
+
+### What `analyze()` does
+
+[`ThermoelasticCompliance.analyze()`](thermotopo/problem.py) evaluates one density
+layout. It first solves temperatures, then thermal forces and displacements, and
+returns compliance, volume fraction, and monitored temperatures. By default it
+also calculates their density gradients using adjoint equations. Calling it with
+`sensitivities=False` skips the gradients.
+
+[`optimize()`](thermotopo/optimizer.py) repeatedly calls `analyze()`, converts those
+gradients through the density filter and symmetry mapping, and passes them to MMA
+for the next design update. Stress is evaluated separately during post-processing.
+
+<details>
+<summary>Equations and implementation details</summary>
+
+The implemented problem is:
+
+```text
+Minimize:       C = FᵀU
+
+Subject to:    K_T(rho) theta = P
+               K_m(rho) U = F_m + F_th(rho, theta)
+               mean(rho) <= volume_fraction
+               T_i <= temperature_limit_i at specified locations
+               x_min <= x_e <= 1
+
+where:         theta = T - T_ref
+               x = element design variables before density filtering
+               rho = physical densities after filtering and passive-region overrides
+```
+
+The discretization uses four-node square elements (Q4), 2 × 2 Gauss integration,
+linear plane-stress elasticity, and steady heat conduction. RAMP interpolation
+scales stiffness, conductivity, and thermal loading. Adjoint equations provide
+gradients without independently perturbing every element density.
+
+Optimization stops when relative compliance changes stay below `tolerance` for
+`window` consecutive iterations and the volume and temperature constraints meet
+the optimizer's tolerances, or when `max_iterations` is reached.
+
+</details>
+
+## Read the results
+
+By default, each run writes to `results/<name>/`. A problem's `output.directory`
+setting or the command-line `--out` option can change this location.
+
+| File | What to look for |
+|---|---|
+| `setup.png` | Geometry and boundary conditions; inspect this before trusting a run |
+| `density.png` | Material layout: black is solid, white is empty, gray is intermediate density |
+| `fields.png` | Density, reported von Mises stress in MPa, and temperature in K |
+| `history.png` | How compliance, material volume, and monitored temperatures changed each iteration |
+| `history.csv` | The iteration history as a spreadsheet-readable table |
+| `summary.json` | Final compliance, volume, temperatures, stress, iteration count, status, and feasibility |
+| `result.npz` | NumPy arrays for densities, nodal temperatures, displacements, stress, and mesh data |
+| `result.vtk` | Fields for inspection in ParaView or another VTK viewer |
+| `problem_used.yaml` | Input settings used for this run, including command-line overrides |
+
+In `summary.json`, check:
+
+- `feasible`: whether the volume and monitored temperature constraints passed the
+  optimizer's tolerances. This field does not assess stress or manufacturing requirements.
+- `status`: `converged` means the stopping rule was satisfied. `max_iterations`
+  means the iteration budget ended; check feasibility and the history before
+  treating the design as finished.
+- `constrained_temperatures_K` and `temperature_limits_K`: the monitored values
+  and their limits. `T_max_domain_K` is the maximum nodal temperature anywhere,
+  which can differ from the monitored values.
+- `gray_fraction_0p1_0p9`: the fraction of elements with intermediate densities
+  between 0.1 and 0.9. A gray layout is not yet a simple solid/empty geometry.
+
+## Define your own part
+
+For a fully commented starting point, copy [`examples/TEMPLATE.yaml`](examples/TEMPLATE.yaml).
+Alternatively, save this smaller example as `my_part.yaml` in the project root:
+
+```yaml
+name: my_part
+units: mm
+
+geometry:
+  element_size: 1.0
+  add:
+    - {type: rectangle, x: [0, 40], y: [0, 20]}
+
+material:
+  thickness: 1.0
+  reference_temperature: 300.0
+  # Other material properties default to steel; see examples/TEMPLATE.yaml.
+
+mechanical:
+  supports:
+    - {where: {edge: left}, fix: xy}
+  loads:
+    - {where: {point: [40, 10]}, force: [0, -100]}
+
+thermal:
+  fixed_temperature:
+    - {where: {edge: left}, value: 300.0}
+  heat_sources:
+    - name: chip
+      where: {point: [30, 10]}
+      power: 0.02
+      max_temperature: 315.0
+
+optimization:
+  volume_fraction: 0.5
+  filter_radius: 1.5
+  max_iterations: 200
+```
+
+This describes a 40 × 20 × 1 mm plate, fixed and cooled along its left edge, with
+a 100 N downward force on the right and a 0.02 W heat source inside. Up to half
+its original material volume may remain. The source temperature must stay at or
+below 315 K.
+
+Check and run it from the project root:
+
+```bash
+python run.py my_part.yaml --check
+python run.py my_part.yaml
+```
+
+### Geometry and boundary conditions
+
+- Build the domain with `geometry.add` shapes and remove regions with
+  `geometry.subtract`. Supported shapes are rectangles, circles, polygons, and
+  images. For images, dark pixels define the allowed domain; image paths are
+  relative to the input file.
+- Use `passive_solid` for material that must remain, such as a bolt ring, and
+  `passive_void` for regions that must stay nearly empty.
+- Select boundary-condition nodes using `point`, `points`, `line`, `box`,
+  `circle`, or `edge: left|right|top|bottom`. `edge` refers to the mesh's bounding
+  box. Use `setup.png` to confirm the selected locations.
+- `fix: x`, `y`, or `xy` controls which displacement directions are restrained.
+  Supports must prevent rigid-body motion, and at least one fixed-temperature
+  boundary is required.
+- `force: [Fx, Fy]` is the **total** force split across the selected nodes by
+  default. `per_node: true` applies that force to each selected node instead.
+- A heat source's `power` is the **total** power shared across its selected nodes.
+  For a point source, `max_temperature` constrains the interpolated temperature
+  there; for a region, it creates a constraint at each selected node.
+- Use `thermal.temperature_limits` to constrain additional monitored points
+  without adding heat sources.
+
+### Units
+
+| Quantity | Unit |
+|---|---|
+| Coordinates, element size, filter radius, thickness | Input file's `units`: `mm` by default; also `m`, `cm`, `um`, or `in` |
+| Young's modulus | Pa |
+| Thermal conductivity | W/(m K) |
+| Thermal expansion coefficient | 1/K |
+| Force | N |
+| Heat input | W |
+| Temperature | K, not °C |
+
+The solver converts lengths to metres internally. Saved displacement arrays use
+metres; the exported mesh coordinates retain the input length unit.
+
+### Change settings without editing the file
+
+```bash
+python run.py examples/l_beam.yaml --set optimization.volume_fraction=0.45 --out results/l_beam_v45
+python run.py examples/l_beam.yaml --set optimization.max_iterations=20 --out results/l_beam_short
+python run.py examples/biclamped_beam.yaml --quiet
+python run.py --help
+```
+
+A short run is useful for exploring the program, but can stop before the layout
+converges or satisfies its constraints. If temperatures exceed their limits,
+check the heat input, cooling boundaries, material allowance, and convergence
+history. `--check` is a setup check, not proof that the optimization is feasible.
+
+## Included examples
+
+| File | What it demonstrates |
+|---|---|
+| [`l_beam.yaml`](examples/l_beam.yaml) | L-shaped benchmark with two heat sources and a 53% volume allowance |
+| [`biclamped_beam.yaml`](examples/biclamped_beam.yaml) | Beam clamped at both ends, with a 49% volume allowance |
+| [`bracket_with_hole.yaml`](examples/bracket_with_hole.yaml) | Circular hole, bolt support, and a passive solid ring |
+| [`roof_polygon.yaml`](examples/roof_polygon.yaml) | Polygon geometry, roller support, symmetry, and aluminium |
+| [`hook_from_image.yaml`](examples/hook_from_image.yaml) | Geometry read from the included `hook.png` input image |
+| [`TEMPLATE.yaml`](examples/TEMPLATE.yaml) | Commented reference for the available settings |
+
+## Project structure
+
+```text
+thermoelastic_topopt/
+├── README.md                Project explanation and usage
+├── requirements.txt         Python dependencies
+├── run.py                   Run a problem from the command line
+├── verify.py                Numerical self-checks
+├── run_all.sh               Run checks, examples, and paper comparison
+├── examples/                Input problems, template, and hook input image
+├── thermotopo/              Solver and optimization package
+│   ├── config.py            Read inputs, convert units, build the problem
+│   ├── geometry.py          Shapes and domain operations
+│   ├── mesh.py              Square-element mesh and node selection
+│   ├── fem.py               Element matrices and sparse assembly
+│   ├── problem.py           Physics solves, gradients, filtering, and stress
+│   ├── optimizer.py         Analysis/update loop and stopping rules
+│   ├── mma.py               Method of Moving Asymptotes implementation
+│   └── postprocess.py       Plots and data exports
+├── scripts/                 Optional comparison and parameter-study tools
+├── paper_reference/         Reference layouts used by comparison tools
+├── results/                 Generated outputs; excluded from new Git tracking
+└── .venv/                   Local Python environment; excluded from Git
+```
+
+To read the source, start with `run.py`, then `config.py`, `optimizer.py`, and
+`problem.py`. `fem.py` contains the element-level calculations they use.
+
+## Checks and paper comparisons
+
+```bash
+python verify.py
+```
+
+The existing checks cover element-matrix symmetry and rigid-body modes, free
+thermal expansion, benchmark geometry and loads, adjoint gradients against finite
+differences, and MMA on a small problem with a known optimum.
+
+The reference is Meng et al. (2021), *Thermo-elastic topology optimization with
+stress and temperature constraints*, International Journal for Numerical Methods
+in Engineering, 122:2919–2944. This project implements the compliance-minimization
+formulation identified as Eq. (23) in that paper.
+
+Run both benchmarks before generating a comparison:
+
+```bash
+python run.py examples/l_beam.yaml
+python run.py examples/biclamped_beam.yaml
+python scripts/compare_with_paper.py
+```
+
+The comparison script writes `results/paper_comparison.png` and
+`results/paper_comparison.md`. It uses the digitized layouts in `paper_reference/`
+to compare solid/void patterns and reports temperatures, stress, compliance, and
+thermal-to-mechanical load ratios. Pixel agreement and intersection-over-union
+(IoU) measure visual layout similarity; they do not establish physical accuracy.
+
+For an optional four-run parameter study:
+
+```bash
+python scripts/parameter_study.py examples/l_beam.yaml --mask paper_reference/fig4A_l_beam.npy --grid ramp_stiffness=3,5 filter_radius=2,2.5 --jobs 2
+```
+
+This writes `study.csv` and `study.png` under `results/parameter_study/l_beam/`.
+Reference masks must match the problem's mesh grid; keep the example mesh size
+when using the supplied masks. Numerical settings affect the local optimum, so
+an exact match to the published figures is not guaranteed.
+
+On Linux, WSL, or macOS, `bash run_all.sh` runs the self-checks, both benchmarks,
+their comparison, and the three additional example problems. Activate the virtual
+environment first. Parameter sweeps are run separately.
+
+## What to push to GitHub
+
+Keep the files needed to understand, run, and reproduce the project. The
+[`.gitignore`](.gitignore) excludes environments, caches, generated results, and
+local environment settings from new tracking.
+
+| Path | Push it? | Reason |
+|---|---|---|
+| `thermotopo/` | Yes, except `__pycache__/` | Core solver and optimizer |
+| `examples/`, including `hook.png` | Yes | Runnable inputs; `hook.png` is required by the image example |
+| `scripts/` | Recommended | Comparison and parameter-study tools |
+| `paper_reference/` | Recommended | Small reference inputs needed for paper comparison; optional for ordinary optimization runs |
+| `README.md`, `requirements.txt`, `run.py`, `verify.py`, `run_all.sh`, `.gitignore` | Yes | Documentation, dependencies, entry points, and checks |
+| `.venv/` or `venv/` | No | Local Python installation; recreate it from `requirements.txt` |
+| `__pycache__/`, `*.pyc`, tool caches | No | Regenerated automatically |
+| `results/` | Usually no | Regenerated plots, exports, histories, and reports |
+| `.env` and local `.env.*` files | No | Machine-specific settings or secrets; a placeholder `.env.example` may be committed |
+| `.git/` | Do not upload manually | Local Git metadata; normal `git push` transfers the repository history |
+
+If you want a few result images visible on GitHub, copy selected images into a
+tracked `docs/images/` folder and link them here. Keep the full generated runs
+under `results/`.
+
+**Already tracked results:** adding a path to `.gitignore` does not stop tracking
+files committed earlier. To remove generated results from future commits while
+keeping the local files, run from the project root:
+
+```bash
+git rm -r --cached -- results
+git add README.md .gitignore
+git diff --cached --stat
+git commit -m "Improve project guide and exclude generated results"
+git push origin main
+```
+
+The removal takes effect on GitHub after the commit is pushed. Earlier commits
+still contain those files. If `results/` was never tracked, skip the `git rm` line.
+
+## Limitations
+
+- The model is 2D, linear elastic, and steady-state, with plane-stress assumptions
+  and temperature-independent material properties. It does not simulate transient
+  heating, plastic deformation, or large displacements.
+- Curved boundaries are approximated by square elements. Smaller elements improve
+  geometric resolution but increase memory use and runtime. Unstructured meshes
   are not supported.
-* Steady-state, linear, 2D plane stress, temperature-independent material properties,
-  as in the paper.
-* Only the **stiffest-design problem (Eq. 23)** is implemented. The paper's
-  stress-constrained lightest design (Eq. 22, P-norm and SSCS) is not; stress is only
-  evaluated for reporting.
-* Topology optimization is non-convex. Different settings, mesh sizes or starting points
-  can give different, equally valid local optima.
+- Temperature limits apply at the specified monitored locations. Other locations
+  can have different temperatures.
+- Reported stress uses a density-relaxed, element-centroid von Mises calculation.
+  The paper's separate stress-constrained minimum-weight formulation (Eq. 22) is
+  not implemented.
+- Different initial designs, meshes, filters, and optimizer settings can produce
+  different local optima. Convergence does not establish a global optimum.
+- The output is a density field. Converting it into a manufacturable solid part
+  requires additional geometry processing and analysis of that resulting geometry.

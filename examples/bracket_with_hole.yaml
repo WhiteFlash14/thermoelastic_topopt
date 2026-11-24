@@ -1,6 +1,3 @@
-# Example (not from the paper): bolted bracket with a hole.
-# Shows: shape subtraction, circle selector, passive (non-design) solid ring,
-#        a heat source with its own temperature limit, two cooled boundaries.
 name: bracket_with_hole
 description: Plate 120 x 60 mm bolted through a hole on the left, loaded at the right tip, heated in the middle
 units: mm
